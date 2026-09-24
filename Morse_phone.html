@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Morse Code Receiver</title>
+
+  <script src="https://raw.githubusercontent.com/iddi/oocsi-web/master/oocsi-web.min.js"></script>
+</head>
+<body>
+  <h1>Decoded Message:</h1>
+  <h2 id="messageDisplay"></h2>
+
+  <script>
+    // 1. Connect to the OOCSI server
+    OOCSI.connect('wss://oocsi.id.tue.nl/ws');
+
+    // 2. Subscribe to the exact same channel your ESP32 is sending to
+    OOCSI.subscribe("morse_broadcast_channel", function(msg) {
+      
+      // 3. Extract the data and update the webpage
+      let incomingLetter = msg.data.letter;
+      document.getElementById("messageDisplay").innerHTML += incomingLetter;
+      
+    });
+  </script>
+</body>
+</html>
