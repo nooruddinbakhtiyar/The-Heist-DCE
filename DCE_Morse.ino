@@ -1,85 +1,92 @@
 #include <WiFi.h>
-#include "OOCSI.h" 
+#include <OOCSI.h>
+#include "pin_config.h" // Includes your DFRobot pin configuration
 
-// ==============================
-// CONFIGURATION
-// ==============================
+// ==========================================
+// Network & OOCSI Settings
+// ==========================================
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
 
-// OOCSI server address (TU/e default)
-const char* OOCSIServer = "oocsi.id.tue.nl";
-const char* OOCSIName = "ESP32_Morse_Sender"; // Needs to be unique on the network
-
-// The channel both ESP32, Lampo, and Frontend will use
-const char* OOCSIChannel = "morse_escape_room";
-
-// ==============================
-// HARDWARE SETUP
-// ==============================
-const int BUTTON_PIN = 4; // Connect button between GPIO 4 and GND
-int lastButtonState = HIGH; // HIGH means not pressed (using pullup)
-unsigned long lastDebounceTime = 0;
-unsigned long debounceDelay = 50; 
+const char* oocsiServer = "oocsi.id.tue.nl";
+const char* oocsiNodeName = "ESP32_Morse_Sender"; // Change if someone else is using this name
+const char* oocsiChannel = "morse_escape_room";    // The channel the frontend and Lampo listen to
 
 OOCSI oocsi = OOCSI();
+
+// ==========================================
+// Button State Variables
+// ==========================================
+int lastButtonState = !BUTTON_ACTIVE_STATE;
+int currentButtonState = !BUTTON_ACTIVE_STATE;
+unsigned long lastDebounceTime = 0;
+bool isCurrentlyPressed = false;
 
 void setup() {
   Serial.begin(115200);
 
-  // Initialize the button pin with an internal pull-up resistor.
-  // This means the pin reads HIGH when the button is open, and LOW when pressed.
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  // Initialize the DFRobot button using the configuration
+  pinMode(BUTTON_PIN, INPUT);
 
-  // Connect to Wi-Fi
-  Serial.println();
-  Serial.print("Connecting to ");
+  // 1. Connect to Wi-Fi
+  Serial.print("Connecting to Wi-Fi: ");
   Serial.println(ssid);
   WiFi.begin(ssid, password);
-
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nWiFi connected.");
+  Serial.println("\nWi-Fi connected!");
 
-  // Connect to OOCSI
-  oocsi.connect(OOCSIName, OOCSIServer, WiFi.localIP());
+  // 2. Connect to OOCSI
+  Serial.println("Connecting to OOCSI...");
+  oocsi.connect(oocsiNodeName, oocsiServer, ssid, password);
 }
 
 void loop() {
-  // Keep OOCSI connection alive
+  // Keep OOCSI running and processing incoming messages (if any)
   oocsi.check();
 
-  // Read the state of the switch into a local variable:
+  // Read the physical state of the DFRobot button
   int reading = digitalRead(BUTTON_PIN);
 
-  // Check to see if you just pressed the button
-  
+  // Reset debounce timer if the button state changed (due to noise or pressing)
   if (reading != lastButtonState) {
     lastDebounceTime = millis();
   }
 
-  if ((millis() - lastDebounceTime) > debounceDelay) {
-    // if the button state has changed:
-    if (reading != lastButtonState) {
-      lastButtonState = reading;
+  // Check if the reading has been stable for longer than the debounce delay
+  if ((millis() - lastDebounceTime) > DEBOUNCE_DELAY_MS) {
+    
+    // If the state has legitimately changed
+    if (reading != currentButtonState) {
+      currentButtonState = reading;
 
-      // Create a new OOCSI message directed to the shared channel
-      oocsi.newMessage(OOCSIChannel);
-
-      if (lastButtonState == LOW) {
-        // Button is pressed (LOW because of INPUT_PULLUP)
-        Serial.println("Button Pressed - Sending to OOCSI");
-        oocsi.addString("state", "pressed");
+      // Was it pressed or released?
+      if (currentButtonState == BUTTON_ACTIVE_STATE) {
+        if (!isCurrentlyPressed) {
+          isCurrentlyPressed = true;
+          Serial.println("Button Pressed - Broadcasting to OOCSI");
+          
+          // Send "pressed" state
+          oocsi.newMessage(oocsiChannel);
+          oocsi.addString("state", "pressed");
+          oocsi.sendMessage();
+        }
       } else {
-        // Button is released
-        Serial.println("Button Released - Sending to OOCSI");
-        oocsi.addString("state", "released");
+        if (isCurrentlyPressed) {
+          isCurrentlyPressed = false;
+          Serial.println("Button Released - Broadcasting to OOCSI");
+          
+          // Send "released" state
+          oocsi.newMessage(oocsiChannel);
+          oocsi.addString("state", "released");
+          oocsi.sendMessage();
+        }
       }
-      
-      // Transmit the message
-      oocsi.send();
     }
   }
+
+  // Save the reading for the next loop to keep track of state changes
+  lastButtonState = reading;
 }
