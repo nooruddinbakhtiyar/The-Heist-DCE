@@ -5,12 +5,17 @@
 // ==========================================
 // Network & OOCSI Settings
 // ==========================================
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+const char* ssid = "I like your Skechers";
+const char* password = "IRONMAIDEN123";
 
 const char* oocsiServer = "oocsi.id.tue.nl";
-const char* oocsiNodeName = "ESP32_Morse_Sender";
-const char* oocsiChannel = "morse_escape_room";    
+const char* oocsiNodeName = "Team_7_Button"; 
+
+// The channel for your web app decoder
+const char* oocsiChannel = "Heist_escape_room";    
+
+// ⚠️ CHANGE THIS to the exact channel name your Lampo is listening to!
+const char* lampoChannel = "lampo_team_7"; 
 
 OOCSI oocsi = OOCSI();
 
@@ -24,7 +29,6 @@ bool isCurrentlyPressed = false;
 
 void setup() {
   Serial.begin(115200);
-
 
   pinMode(BUTTON_PIN, INPUT);
 
@@ -66,21 +70,33 @@ void loop() {
       if (currentButtonState == BUTTON_ACTIVE_STATE) {
         if (!isCurrentlyPressed) {
           isCurrentlyPressed = true;
-          Serial.println("Button Pressed - Broadcasting to OOCSI");
+          Serial.println("Button Pressed - Broadcasting to App & Lampo");
           
-          // Send "pressed" state
+          // 1. Send "pressed" state to the Web Decoder App
           oocsi.newMessage(oocsiChannel);
           oocsi.addString("state", "pressed");
+          oocsi.sendMessage();
+
+          // 2. Send ON command to Lampo
+          // Note: If Lampo needs color instead of a boolean, change this to addString("color", "white")
+          oocsi.newMessage(lampoChannel);
+          oocsi.addBool("state", true); 
           oocsi.sendMessage();
         }
       } else {
         if (isCurrentlyPressed) {
           isCurrentlyPressed = false;
-          Serial.println("Button Released - Broadcasting to OOCSI");
+          Serial.println("Button Released - Broadcasting to App & Lampo");
           
-          // Send "released" state
+          // 1. Send "released" state to the Web Decoder App
           oocsi.newMessage(oocsiChannel);
           oocsi.addString("state", "released");
+          oocsi.sendMessage();
+
+          // 2. Send OFF command to Lampo
+          // Note: If Lampo needs color instead of a boolean, change this to addString("color", "black")
+          oocsi.newMessage(lampoChannel);
+          oocsi.addBool("state", false); 
           oocsi.sendMessage();
         }
       }
