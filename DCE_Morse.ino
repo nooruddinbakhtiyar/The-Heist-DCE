@@ -1,54 +1,86 @@
-#include <OOCSI.h>
+#include <WiFi.h>
+#include "OOCSI.h" // You need to install the OOCSI library in Arduino IDE
 
+// ==============================
+// CONFIGURATION
+// ==============================
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
-const char* oocsiServer = "oocsi.id.tue.nl"; 
-const char* myOOCSIName = "ESP32_Lampo_Controller"; //
+
+// OOCSI server address (TU/e default)
+const char* OOCSIServer = "oocsi.id.tue.nl";
+const char* OOCSIName = "ESP32_Morse_Sender"; // Needs to be unique on the network
+
+// The channel both ESP32, Lampo, and Frontend will use
+const char* OOCSIChannel = "morse_escape_room";
+
+// ==============================
+// HARDWARE SETUP
+// ==============================
+const int BUTTON_PIN = 4; // Connect button between GPIO 4 and GND
+int lastButtonState = HIGH; // HIGH means not pressed (using pullup)
+unsigned long lastDebounceTime = 0;
+unsigned long debounceDelay = 50; 
 
 OOCSI oocsi = OOCSI();
 
-const int buttonPin = 4; 
-int lastButtonState = LOW;
-
-
-bool lampoState = false; 
-
-//Channel name
-const char* lampoChannel = "lampo_channel_name"; 
-
 void setup() {
   Serial.begin(115200);
-  pinMode(buttonPin, INPUT_PULLDOWN); 
 
-  oocsi.connect(myOOCSIName, oocsiServer, ssid, password);
+  // Initialize the button pin with an internal pull-up resistor.
+  // This means the pin reads HIGH when the button is open, and LOW when pressed.
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  // Connect to Wi-Fi
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi connected.");
+
+  // Connect to OOCSI
+  oocsi.connect(OOCSIName, OOCSIServer, WiFi.localIP());
 }
 
 void loop() {
-  oocsi.check(); 
+  // Keep OOCSI connection alive
+  oocsi.check();
 
-  int currentButtonState = digitalRead(buttonPin);
+  // Read the state of the switch into a local variable:
+  int reading = digitalRead(BUTTON_PIN);
 
-  // Trigger from high to low
-  if (currentButtonState == HIGH && lastButtonState == LOW) {
-    
-    // flip state
-    lampoState = !lampoState; 
-    
-    oocsi.newMessage(lampoChannel);
-    
-    // "state" for different variable
-    oocsi.addBool("state", lampoState);
-    
-    
-    
-    oocsi.sendMessage();
-    
-    Serial.print("Button Pressed - Lampo toggled to: ");
-    Serial.println(lampoState ? "ON" : "OFF");
-    
-    // preventing double clicks
-    delay(200); 
+  // Check to see if you just pressed the button
+  // (i.e. the input went from HIGH to LOW), and you've waited long enough
+  // since the last press to ignore any noise:
+  if (reading != lastButtonState) {
+    lastDebounceTime = millis();
   }
-  
-  lastButtonState = currentButtonState;
+
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    // if the button state has changed:
+    if (reading != lastButtonState) {
+      lastButtonState = reading;
+
+      // Create a new OOCSI message directed to the shared channel
+      oocsi.newMessage(OOCSIChannel);
+
+      if (lastButtonState == LOW) {
+        // Button is pressed (LOW because of INPUT_PULLUP)
+        Serial.println("Button Pressed - Sending to OOCSI");
+        oocsi.addString("state", "pressed");
+      } else {
+        // Button is released
+        Serial.println("Button Released - Sending to OOCSI");
+        oocsi.addString("state", "released");
+      }
+      
+      // Transmit the message
+      oocsi.send();
+    }
+  }
 }
