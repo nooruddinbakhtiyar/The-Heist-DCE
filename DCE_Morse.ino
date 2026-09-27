@@ -1,6 +1,6 @@
 #include <WiFi.h>
 #include <OOCSI.h>
-#include "pin_config.h" // Includes your DFRobot pin configuration
+#include "pin_config.h" 
 
 // ==========================================
 // Network & OOCSI Settings
@@ -9,8 +9,8 @@ const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
 
 const char* oocsiServer = "oocsi.id.tue.nl";
-const char* oocsiNodeName = "ESP32_Morse_Sender"; // Change if someone else is using this name
-const char* oocsiChannel = "morse_escape_room";    // The channel the frontend and Lampo listen to
+const char* oocsiNodeName = "ESP32_Morse_Sender";
+const char* oocsiChannel = "morse_escape_room";    
 
 OOCSI oocsi = OOCSI();
 
@@ -25,7 +25,7 @@ bool isCurrentlyPressed = false;
 void setup() {
   Serial.begin(115200);
 
-  // Initialize the DFRobot button using the configuration
+
   pinMode(BUTTON_PIN, INPUT);
 
   // 1. Connect to Wi-Fi
