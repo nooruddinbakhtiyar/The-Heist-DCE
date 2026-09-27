@@ -1,5 +1,5 @@
 #include <WiFi.h>
-#include "OOCSI.h" // You need to install the OOCSI library in Arduino IDE
+#include "OOCSI.h" 
 
 // ==============================
 // CONFIGURATION
@@ -55,8 +55,7 @@ void loop() {
   int reading = digitalRead(BUTTON_PIN);
 
   // Check to see if you just pressed the button
-  // (i.e. the input went from HIGH to LOW), and you've waited long enough
-  // since the last press to ignore any noise:
+  
   if (reading != lastButtonState) {
     lastDebounceTime = millis();
   }
