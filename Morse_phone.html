@@ -1,26 +1,233 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Morse Code Receiver</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SECURE TERMINAL // OVERRIDE</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- OOCSI Web Library -->
+    <script src="https://unpkg.com/oocsi-web/dist/oocsi-web.min.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #0a0a0a;
+            color: #00ff00;
+            overflow: hidden;
+        }
 
-  <script src="https://raw.githubusercontent.com/iddi/oocsi-web/master/oocsi-web.min.js"></script>
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.2) 50%,
+                rgba(0,0,0,0.2)
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        .glow {
+            text-shadow: 0 0 5px #00ff00, 0 0 10px #00ff00;
+        }
+
+        .glitch-error {
+            color: #ff0000;
+            text-shadow: 0 0 5px #ff0000;
+            animation: glitch 0.2s linear infinite;
+        }
+
+        @keyframes glitch {
+            0% { transform: translate(0) }
+            20% { transform: translate(-2px, 2px) }
+            40% { transform: translate(-2px, -2px) }
+            60% { transform: translate(2px, 2px) }
+            80% { transform: translate(2px, -2px) }
+            100% { transform: translate(0) }
+        }
+
+        /* The indicator dot animation */
+        .indicator-on {
+            background-color: #ff3333;
+            box-shadow: 0 0 15px #ff3333, 0 0 30px #ff3333;
+        }
+        
+        .indicator-off {
+            background-color: #330000;
+            box-shadow: inset 0 0 5px #000;
+        }
+
+        /* Success Animation */
+        .access-granted-bg {
+            animation: flashGreen 2s forwards;
+        }
+
+        @keyframes flashGreen {
+            0% { background-color: #0a0a0a; }
+            10% { background-color: #003300; }
+            20% { background-color: #0a0a0a; }
+            30% { background-color: #005500; }
+            100% { background-color: #0a0a0a; }
+        }
+    </style>
 </head>
-<body>
-  <h1>Decoded Message:</h1>
-  <h2 id="messageDisplay"></h2>
 
-  <script>
-    // 1. Connect to the OOCSI server
-    OOCSI.connect('wss://oocsi.id.tue.nl/ws');
+<body class="h-screen w-screen flex flex-col items-center justify-center relative">
+    <div class="scanlines"></div>
 
-    // 2. Subscribe to the exact same channel your ESP32 is sending to
-    OOCSI.subscribe("morse_broadcast_channel", function(msg) {
-      
-      // 3. Extract the data and update the webpage
-      let incomingLetter = msg.data.letter;
-      document.getElementById("messageDisplay").innerHTML += incomingLetter;
-      
-    });
-  </script>
+    <div id="main-container" class="z-10 w-full max-w-2xl p-8 border border-green-700 bg-black bg-opacity-80 rounded-sm shadow-[0_0_20px_rgba(0,255,0,0.2)]">
+        
+        <!-- Header & Transmission Indicator -->
+        <div class="flex justify-between items-center border-b border-green-800 pb-4 mb-8">
+            <h1 class="text-2xl font-bold tracking-widest glow">SYSTEM OVERRIDE</h1>
+            <div class="flex items-center gap-3">
+                <span class="text-xs text-gray-500 uppercase tracking-widest" id="conn-status">Connecting to OOCSI...</span>
+                <div class="flex items-center gap-2 border border-gray-700 px-3 py-1 rounded">
+                    <span class="text-xs">RX:</span>
+                    <!-- This div lights up when Morse code is being pressed -->
+                    <div id="transmission-indicator" class="w-4 h-4 rounded-full indicator-off transition-all duration-75"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Logs -->
+        <div class="mb-8 text-sm opacity-80 h-32 overflow-hidden flex flex-col justify-end" id="system-logs">
+            <p>> Establishing secure connection...</p>
+            <p>> Awaiting clearance code...</p>
+        </div>
+
+        <!-- Input Section -->
+        <div id="input-section" class="flex flex-col gap-4">
+            <label class="text-sm uppercase tracking-widest glow">Enter Decrypted Passcode:</label>
+            <div class="flex gap-4">
+                <input type="text" id="passcode-input" autocomplete="off" spellcheck="false"
+                    class="w-full bg-transparent border-2 border-green-800 text-green-400 text-2xl p-4 focus:outline-none focus:border-green-400 focus:shadow-[0_0_10px_rgba(0,255,0,0.5)] transition-all uppercase"
+                    placeholder="____">
+                <button id="submit-btn" onclick="checkPasscode()" 
+                    class="bg-green-900 border-2 border-green-600 px-8 font-bold hover:bg-green-700 hover:shadow-[0_0_15px_rgba(0,255,0,0.6)] transition-all">
+                    VERIFY
+                </button>
+            </div>
+            <p id="feedback-msg" class="h-6 text-sm mt-2"></p>
+        </div>
+
+        <!-- Success Section (Hidden by default) -->
+        <div id="success-section" class="hidden flex-col items-center justify-center py-12">
+            <h2 class="text-5xl font-bold text-green-400 glow mb-4">ACCESS GRANTED</h2>
+            <p class="text-green-600 animate-pulse">Mainframe unlocked. Command sent to Lampo module.</p>
+        </div>
+
+    </div>
+
+    <script>
+        const OOCSI_CHANNEL = "morse_escape_room";
+        const CORRECT_PASSCODE = "NOVA";
+
+        // Generate a random client name so multiple browsers don't collide
+        const clientName = "Terminal_" + Math.floor(Math.random() * 100000);
+        
+        const indicator = document.getElementById('transmission-indicator');
+        const connStatus = document.getElementById('conn-status');
+        const logs = document.getElementById('system-logs');
+
+        // 1. Connect to OOCSI
+        // Using the TU/e public server
+        OOCSI.connect("wss://oocsi.id.tue.nl/ws", clientName);
+
+        // Allow some time for connection to establish, then setup subscription
+        setTimeout(() => {
+            connStatus.innerText = "OOCSI LINK ACTIVE";
+            connStatus.classList.add("text-green-500", "glow");
+            addLog("> Connected to channel: " + OOCSI_CHANNEL);
+            
+            // 2. Subscribe to the channel to listen for the ESP32
+            OOCSI.subscribe(OOCSI_CHANNEL, function(msg) {
+                
+                // If a "state" property exists, it's likely our ESP32 sending a button press
+                if (msg.data && msg.data.state) {
+                    if (msg.data.state === "pressed") {
+                        // Light up the indicator on the screen
+                        indicator.classList.remove('indicator-off');
+                        indicator.classList.add('indicator-on');
+                    } 
+                    else if (msg.data.state === "released") {
+                        // Turn off the indicator
+                        indicator.classList.remove('indicator-on');
+                        indicator.classList.add('indicator-off');
+                    }
+                }
+            });
+        }, 1500);
+
+        // Utility to add hacker-like logs
+        function addLog(text) {
+            const p = document.createElement('p');
+            p.innerText = text;
+            logs.appendChild(p);
+            // keep only last 5 lines
+            while (logs.children.length > 5) {
+                logs.removeChild(logs.firstChild);
+            }
+        }
+
+        // Allow pressing Enter to submit
+        document.getElementById("passcode-input").addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                checkPasscode();
+            }
+        });
+
+        // 3. Logic to handle the password and send a message BACK over OOCSI
+        function checkPasscode() {
+            const inputField = document.getElementById("passcode-input");
+            const feedbackMsg = document.getElementById("feedback-msg");
+            
+            const attempt = inputField.value.trim().toUpperCase();
+
+            if (attempt === CORRECT_PASSCODE) {
+                // Success!
+                addLog("> Passcode accepted. Override initiated.");
+                
+                // Hide input, show success
+                document.getElementById('input-section').classList.add('hidden');
+                document.getElementById('success-section').classList.remove('hidden');
+                document.getElementById('success-section').classList.add('flex');
+                
+                // Flash the screen
+                document.body.classList.add('access-granted-bg');
+
+                // SEND OOCSI MESSAGE TO LAMPO
+                // This payload tells the Lampo device to play the green success animation
+                OOCSI.send(OOCSI_CHANNEL, {
+                    action: "success_animation",
+                    color: "green"
+                });
+                
+            } else {
+                // Failure
+                addLog(`> ERROR: Invalid passcode '${attempt}'.`);
+                
+                feedbackMsg.innerText = "ERROR: INVALID CODE";
+                feedbackMsg.className = "h-6 text-sm mt-2 glitch-error";
+                
+                inputField.value = "";
+                
+                // Reset error message after 2 seconds
+                setTimeout(() => {
+                    feedbackMsg.innerText = "";
+                    feedbackMsg.className = "h-6 text-sm mt-2";
+                }, 2000);
+            }
+        }
+    </script>
 </body>
 </html>
