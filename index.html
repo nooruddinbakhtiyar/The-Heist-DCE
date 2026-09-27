@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SECURE TERMINAL // OVERRIDE</title>
+    <title>THE HEIST // TEAM 7 TERMINAL</title>
     <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- OOCSI Web Library -->
@@ -87,7 +87,7 @@
         
         <!-- Header & Transmission Indicator -->
         <div class="flex justify-between items-center border-b border-green-800 pb-4 mb-8">
-            <h1 class="text-2xl font-bold tracking-widest glow">SYSTEM OVERRIDE</h1>
+            <h1 class="text-2xl font-bold tracking-widest glow">THE HEIST // SYSTEM OVERRIDE</h1>
             <div class="flex items-center gap-3">
                 <span class="text-xs text-gray-500 uppercase tracking-widest" id="conn-status">Connecting to OOCSI...</span>
                 <div class="flex items-center gap-2 border border-gray-700 px-3 py-1 rounded">
@@ -100,7 +100,8 @@
 
         <!-- System Logs -->
         <div class="mb-8 text-sm opacity-80 h-32 overflow-hidden flex flex-col justify-end" id="system-logs">
-            <p>> Establishing secure connection...</p>
+            <p>> Initiating The Heist protocol...</p>
+            <p>> Establishing secure connection for Team 7...</p>
             <p>> Awaiting clearance code...</p>
         </div>
 
@@ -121,32 +122,32 @@
 
         <!-- Success Section (Hidden by default) -->
         <div id="success-section" class="hidden flex-col items-center justify-center py-12">
-            <h2 class="text-5xl font-bold text-green-400 glow mb-4">ACCESS GRANTED</h2>
-            <p class="text-green-600 animate-pulse">Mainframe unlocked. Command sent to Lampo module.</p>
+            <h2 class="text-5xl font-bold text-green-400 glow mb-4">VAULT UNLOCKED</h2>
+            <p class="text-green-600 animate-pulse">Team 7 access granted. Command sent to Lampo module.</p>
         </div>
 
     </div>
 
     <script>
-        const OOCSI_CHANNEL = "morse_escape_room";
+        // FIXED: Channel now exactly matches the ESP32 code
+        const OOCSI_CHANNEL = "Heist_escape_room";
         const CORRECT_PASSCODE = "NOVA";
 
         // Generate a random client name so multiple browsers don't collide
-        const clientName = "Terminal_" + Math.floor(Math.random() * 100000);
+        const clientName = "Team7_Terminal_" + Math.floor(Math.random() * 100000);
         
         const indicator = document.getElementById('transmission-indicator');
         const connStatus = document.getElementById('conn-status');
         const logs = document.getElementById('system-logs');
 
         // 1. Connect to OOCSI
-        // Using the TU/e public server
         OOCSI.connect("wss://oocsi.id.tue.nl/ws", clientName);
 
         // Allow some time for connection to establish, then setup subscription
         setTimeout(() => {
             connStatus.innerText = "OOCSI LINK ACTIVE";
             connStatus.classList.add("text-green-500", "glow");
-            addLog("> Connected to channel: " + OOCSI_CHANNEL);
+            addLog("> Connected to secure channel: " + OOCSI_CHANNEL);
             
             // 2. Subscribe to the channel to listen for the ESP32
             OOCSI.subscribe(OOCSI_CHANNEL, function(msg) {
@@ -195,7 +196,7 @@
 
             if (attempt === CORRECT_PASSCODE) {
                 // Success!
-                addLog("> Passcode accepted. Override initiated.");
+                addLog("> Passcode accepted. Vault override initiated.");
                 
                 // Hide input, show success
                 document.getElementById('input-section').classList.add('hidden');
@@ -209,7 +210,8 @@
                 // This payload tells the Lampo device to play the green success animation
                 OOCSI.send(OOCSI_CHANNEL, {
                     action: "success_animation",
-                    color: "green"
+                    color: "green",
+                    team: "Team_7"
                 });
                 
             } else {
