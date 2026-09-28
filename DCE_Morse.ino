@@ -11,10 +11,10 @@ const char* password = "IRONMAIDEN123";
 const char* oocsiServer = "oocsi.id.tue.nl";
 const char* oocsiNodeName = "Team_7_Button"; 
 
-// The channel for your web app decoder
+
 const char* oocsiChannel = "Heist_escape_room";    
 
-// ⚠️ CHANGE THIS to the exact channel name your Lampo is listening to!
+
 const char* lampoChannel = "lampo_team_7"; 
 
 OOCSI oocsi = OOCSI();
