@@ -203,23 +203,6 @@
   </div>
 
 <script>
-  // =====================================================
-  // SETTINGS
-  // This module was made for team 7, but any team can use it in their
-  // own escape room. To do so, set TEAM_NUMBER to your own team number;
-  // the teamspace and the channel ("OOCSI-things/team" + your number)
-  // are built from it automatically. Then change CORRECT_PASSCODE to the
-  // code your players have to decode. The ESP32 must talk on the same
-  // channel, so change teamChannel in DCE_Morse.ino as well, otherwise
-  // the page and the suitcase will not hear each other. To make the page
-  // fit your story, change the visible texts in the HTML (the tab name in
-  // <title>, the heading in <h1> and the "VAULT UNLOCKED" message) and
-  // adapt the look in the CSS, explained under "STYLING" in <style>.
-  // Everything below these settings can stay as it is, as long as the
-  // ESP32 runs DCE_Morse.ino with the same button and messages. If you
-  // use a different device or message format, you will need to adapt
-  // onTeamMessage() (line 379) so the page understands your messages.
-  // =====================================================
   const TEAM_NUMBER = 7;
   const TEAM = "team" + TEAM_NUMBER;
   const TEAM_CHANNEL = "OOCSI-things/" + TEAM;
