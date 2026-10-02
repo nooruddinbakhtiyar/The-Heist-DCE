@@ -1,75 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
-<!--
-  =====================================================================
-  THE HEIST - Team 7 terminal (REM escape room, Money Heist dream)
-  Course: Designing Connected Experiences, TU/e
-  =====================================================================
 
-  This page is the terminal of the Money Heist dream. When it opens, it
-  connects to OOCSI (oocsi.id.tue.nl) and joins the team 7 teamspace as
-  an OOCSI Thing called "heist-terminal". From then on it listens on the
-  team channel "OOCSI-things/team7" for messages from the ESP32 in the
-  suitcase, which runs DCE_Morse.ino.
-
-  The puzzle works like this. The first time someone presses the red
-  Morse button, the terminal switches off and the Lampo screen takes
-  over: a wall with a hole in it and a lamp behind it. The lamp is on
-  while the button is held and off when it is released, so the players
-  see the Morse code as flashes of light through the hole. With the
-  CLEAR button they go back to the terminal and type the code they
-  decoded. The correct code unlocks the vault and sends the event
-  "solved" on the team channel, so the other modules of the escape room
-  can react to it.
-
-  The page understands three messages from the suitcase. Every 10
-  seconds the ESP32 says it is still online, and every press and
-  release of the button is sent as a separate message:
-    { module: "suitcase", event: "online", uptime_s: <seconds> }
-    { module: "morse_button", state: "pressed", lampo_toggle: true }
-    { module: "morse_button", state: "released", lampo_toggle: false, duration_ms: <ms> }
-  The page itself sends two messages: one when it connects and one
-  when the passcode is correct:
-    { module: "terminal", event: "online", team: 7 }
-    { module: "terminal", event: "solved", team: 7 }
-
-  Everything the page needs, including the wall picture, is inside this
-  one file, so nothing else has to be uploaded.
-
-  IMPORTANT! If you want the page to fit the aesthetics of your own
-  escape room, edit the CSS styling code between lines 57 and 226
-  (inside <style> ... </style>). The CSS only changes how the page
-  looks; the OOCSI connection and the puzzle logic are in the
-  JavaScript and keep working as they are.
--->
 <head>
   <meta charset="UTF-8">
-  <!-- viewport: makes the page fit phones and tablets. Without it, a phone pretends
-       to be a wide desktop screen and shrinks everything to tiny. -->
+  <!-- Phone viewport -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>The Heist // Team 7 terminal</title>
 
   <!-- OOCSI libraries, hosted by TU/e -->
-  <script src="https://oocsi.id.tue.nl/assets/js/p5.min.js"></script>              <!-- p5.js, required by OOCSI Things -->
+  <script src="https://oocsi.id.tue.nl/assets/js/p5.min.js"></script>              <!-- p5.js -->
   <script src="https://oocsi.id.tue.nl/assets/js/oocsi-web.js"></script>            <!-- OOCSI connection -->
   <script src="https://oocsi.id.tue.nl/assets/js/things/oocsi-things.min.js"></script> <!-- OOCSI Things (teamspaces) -->
 
   <style>
-    /* =================================================================
-       STYLING (CSS): lines 57 to 226
-       This is where the look of the page is set. Edit it to match the
-       aesthetics of your escape room; only the appearance changes, the
-       page keeps working the same way. The map below shows where each
-       part is, and the colours are the easiest place to start.
-
-         Lines 73-81     Colours: change these first, they are used everywhere
-         Lines 83-103    Page: font, background, scanline and glow effects
-         Lines 105-159   Terminal: header, status boxes, passcode entry, success screen
-         Lines 161-199   Lampo screen: wall picture, lamp colour, light glow
-         Lines 201-219   Animation between terminal and Lampo
-         Lines 221-225   Small screens and reduced motion
-       ================================================================= */
-
     /* ---------- Colours ---------- */
     :root {
       --green: #00ff66;
@@ -90,11 +33,10 @@
       display: flex; align-items: center; justify-content: center;
       overflow: hidden;
     }
-    /* Hide what OOCSI Things adds to the page: the team selection dialog
-       (the team is set in the script) and its "team7: icon" status line */
+    
     #team-modal, #header { display: none !important; }
 
-    /* horizontal lines over the whole screen, like an old monitor */
+    
     .scanlines {
       position: fixed; inset: 0; pointer-events: none; z-index: 50;
       background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(0,0,0,0.22) 50%);
@@ -158,18 +100,6 @@
     .flash { animation: flash 2s forwards; }
     @keyframes flash { 10%{background:#003300} 20%{background:var(--bg)} 30%{background:#005500} 100%{background:var(--bg)} }
 
-    /* ---------- Lampo screen ----------
-       Do not edit this part unless you want to change how the Lampo
-       feature itself works. It is ready to use as it is.
-
-       Only want a different picture? Leave this CSS alone and change the
-       picture in the <img id="wall"> tag, line 273: replace the text in
-       src="..." with the file name of your picture (uploaded to the same
-       Data Foundry dataset, e.g. src="my-wall.png") or its web address.
-       Your picture must have a TRANSPARENT hole (PNG or WebP), otherwise
-       the light cannot shine through. If its shape or hole position
-       differs from the current one (500 x 360, hole at 50.8% 47.6%),
-       also update aspect-ratio in #scene and the position in #spill.  */
     #lampo-screen { position: fixed; inset: 0; z-index: 40; background: #000; display: none; }
     #lampo-screen.shown { display: block; }
 
@@ -197,10 +127,6 @@
     #lamp.on ~ #spill { opacity: 1; }
 
     #clear-msg  { position: absolute; right: 24px; bottom: 20px; z-index: 2; padding: 8px 22px; background: rgba(3,42,20,0.85); }
-
-    /* ---------- Switching between terminal and Lampo ----------
-       Terminal switches off like an old CRT screen (shrinks to a line),
-       Lampo flickers on. CLEAR plays it the other way round.          */
     #main.crt-off  { animation: crtOff 420ms ease-in forwards; }
     #main.crt-on   { animation: crtOn  420ms ease-out; }
     #lampo-screen.power-on  { animation: powerOn  520ms ease-out; }
