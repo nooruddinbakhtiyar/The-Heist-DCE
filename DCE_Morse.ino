@@ -1,108 +1,100 @@
 #include <WiFi.h>
 #include <OOCSI.h>
-#include "pin_config.h" 
+#include "pin_config.h"
 
 // ==========================================
-// Network & OOCSI Settings
+// Network settings  (fill in before flashing, never upload to Data Foundry)
 // ==========================================
-const char* ssid = "I like your Skechers";
-const char* password = "IRONMAIDEN123";
+const char* ssid     = "iotroam";
+const char* password = "ESPsuitcaseTeam7";
 
+// ==========================================
+// OOCSI settings
+// ==========================================
 const char* oocsiServer = "oocsi.id.tue.nl";
-const char* oocsiNodeName = "Team_7_Button"; 
 
+// Unique name; the server replaces #### with random digits
+const char* oocsiNodeName = "team7_suitcase_####";
 
-const char* oocsiChannel = "Heist_escape_room";    
-
-
-const char* lampoChannel = "lampo_team_7"; 
+// THE team channel. Must be identical in index.html (TEAM_CHANNEL).
+const char* teamChannel = "OOCSI-things/team7";
 
 OOCSI oocsi = OOCSI();
 
 // ==========================================
-// Button State Variables
+// Red button state (debounced)
 // ==========================================
-int lastButtonState = !BUTTON_ACTIVE_STATE;
-int currentButtonState = !BUTTON_ACTIVE_STATE;
-unsigned long lastDebounceTime = 0;
-bool isCurrentlyPressed = false;
+int lastReading = !BUTTON_ACTIVE_STATE;
+int stableState = !BUTTON_ACTIVE_STATE;
+unsigned long lastChange = 0;
+unsigned long pressedAt = 0;
+unsigned long lastHeartbeat = 0;
+
+// ==========================================
+// Messages on the team channel
+// ==========================================
+void sendHeartbeat() {
+  oocsi.newMessage(teamChannel);
+  oocsi.addString("module", "suitcase");
+  oocsi.addString("event", "online");
+  oocsi.addInt("uptime_s", (int)(millis() / 1000));
+  oocsi.sendMessage();
+}
+
+void sendRed(const char* state, long durationMs) {
+  oocsi.newMessage(teamChannel);
+  oocsi.addString("module", "morse_button");
+  oocsi.addString("state", state);
+  // Lampo (OOCSI Things): on while pressed, off when released
+  oocsi.addBool("lampo_toggle", strcmp(state, "pressed") == 0);
+  if (durationMs >= 0) oocsi.addInt("duration_ms", (int)durationMs); // only on release
+  oocsi.sendMessage();
+}
 
 void setup() {
   Serial.begin(115200);
+  pinMode(RED_BUTTON_PIN, INPUT_PULLDOWN);  // DFRobot module: HIGH when pressed
 
-  pinMode(BUTTON_PIN, INPUT);
-
-  // 1. Connect to Wi-Fi
-  Serial.print("Connecting to Wi-Fi: ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWi-Fi connected!");
-
-  // 2. Connect to OOCSI
-  Serial.println("Connecting to OOCSI...");
+  // oocsi.connect also connects to Wi-Fi
+  Serial.println("Connecting to Wi-Fi and OOCSI...");
   oocsi.connect(oocsiNodeName, oocsiServer, ssid, password);
+
+  Serial.print("Connected. Talking on channel: ");
+  Serial.println(teamChannel);
+  sendHeartbeat();
+  lastHeartbeat = millis();
 }
 
 void loop() {
-  // Keep OOCSI running and processing incoming messages (if any)
+  // keeps the OOCSI connection alive
   oocsi.check();
 
-  // Read the physical state of the DFRobot button
-  int reading = digitalRead(BUTTON_PIN);
-
-  // Reset debounce timer if the button state changed (due to noise or pressing)
-  if (reading != lastButtonState) {
-    lastDebounceTime = millis();
+  // --- Red button: debounce, then send pressed / released ---
+  int reading = digitalRead(RED_BUTTON_PIN);
+  if (reading != lastReading) {
+    lastChange = millis();
   }
+  lastReading = reading;
 
-  // Check if the reading has been stable for longer than the debounce delay
-  if ((millis() - lastDebounceTime) > DEBOUNCE_DELAY_MS) {
-    
-    // If the state has legitimately changed
-    if (reading != currentButtonState) {
-      currentButtonState = reading;
+  if ((millis() - lastChange) > DEBOUNCE_DELAY_MS && reading != stableState) {
+    stableState = reading;
 
-      // Was it pressed or released?
-      if (currentButtonState == BUTTON_ACTIVE_STATE) {
-        if (!isCurrentlyPressed) {
-          isCurrentlyPressed = true;
-          Serial.println("Button Pressed - Broadcasting to App & Lampo");
-          
-          // 1. Send "pressed" state to the Web Decoder App
-          oocsi.newMessage(oocsiChannel);
-          oocsi.addString("state", "pressed");
-          oocsi.sendMessage();
-
-          // 2. Send ON command to Lampo
-          // Note: If Lampo needs color instead of a boolean, change this to addString("color", "white")
-          oocsi.newMessage(lampoChannel);
-          oocsi.addBool("state", true); 
-          oocsi.sendMessage();
-        }
-      } else {
-        if (isCurrentlyPressed) {
-          isCurrentlyPressed = false;
-          Serial.println("Button Released - Broadcasting to App & Lampo");
-          
-          // 1. Send "released" state to the Web Decoder App
-          oocsi.newMessage(oocsiChannel);
-          oocsi.addString("state", "released");
-          oocsi.sendMessage();
-
-          // 2. Send OFF command to Lampo
-          // Note: If Lampo needs color instead of a boolean, change this to addString("color", "black")
-          oocsi.newMessage(lampoChannel);
-          oocsi.addBool("state", false); 
-          oocsi.sendMessage();
-        }
-      }
+    if (stableState == BUTTON_ACTIVE_STATE) {
+      pressedAt = millis();
+      Serial.println("Red pressed  -> lamp ON");
+      sendRed("pressed", -1);
+    } else {
+      long held = millis() - pressedAt;
+      Serial.print("Red released -> lamp OFF (held ");
+      Serial.print(held);
+      Serial.println(" ms)");
+      sendRed("released", held);
     }
   }
 
-  // Save the reading for the next loop to keep track of state changes
-  lastButtonState = reading;
+  // --- Heartbeat so the web page can show the suitcase is online ---
+  if (millis() - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
+    lastHeartbeat = millis();
+    sendHeartbeat();
+  }
 }
