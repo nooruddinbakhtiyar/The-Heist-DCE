@@ -179,7 +179,7 @@
         <input id="code" type="text" autocomplete="off" spellcheck="false" placeholder="____">
         <button id="verify">VERIFY</button>
       </div>
-      <p id="feedback"></p>
+      <p id="feedback" aria-live="polite"></p>
     </div>
 
     <!-- replaces the passcode entry once the code is correct -->
@@ -208,14 +208,14 @@
   const TEAM_CHANNEL = "OOCSI-things/" + TEAM;
   const CORRECT_PASSCODE = "2026";
   const SUITCASE_TIMEOUT_MS = 25000;   // suitcase counts as lost after 25 s without a message (it sends one every 10 s)
-  const SWAP_MS = 420;                 // length of the terminal -> Lampo animation
 
   // Join your team's teamspace directly, without the team selection dialog
   oocsiThingsConfig = { teamspace: TEAM };
 
   // ---------- State ----------
   let connected = false;         // true once OOCSI is connected
-  let lastSuitcaseSeen = 0;      // time of the last message from the ESP32
+  let suitcaseTimer = 0;         // fires when the ESP32 has been quiet for too long
+  let feedbackTimer = 0;         // clears the passcode feedback
   let solvedData = null;         // OOCSI Things output "solved"
   let lampData = null;           // OOCSI Things output "lamp"
   let lampoShown = false;        // true while the Lampo screen is on
@@ -237,7 +237,7 @@
   function thing() {
     oocsiThings.register('H', 'heist-terminal', ['toggle'], ['solved', 'lamp']);
     solvedData = oocsiThings.data('solved');
-    solvedData(false);
+    solvedData(solved);
     lampData = oocsiThings.data('lamp');
     lampData(false);
 
@@ -245,9 +245,10 @@
 
     connected = true;
     setState('st-terminal', 'Live on ' + TEAM_CHANNEL, 'state-live');
-    log('Connected to team channel ' + TEAM_CHANNEL);
+    heistLog('Connected to team channel ' + TEAM_CHANNEL);
 
     OOCSI.send(TEAM_CHANNEL, { module: 'terminal', event: 'online', team: TEAM_NUMBER });
+    if (solved) sendSolved();   // the code was entered before the connection was up
   }
 
   // =====================================================
@@ -275,10 +276,10 @@
     if (connected) return;
     if (typeof OOCSI === 'undefined' || typeof oocsiThings === 'undefined') {
       setState('st-terminal', 'Offline: OOCSI scripts blocked', 'error');
-      log('OOCSI scripts did not load. Open the page from its Data Foundry link.');
+      heistLog('OOCSI scripts did not load. Open the page from its Data Foundry link.');
     } else {
       setState('st-terminal', 'Offline: server not reached', 'error');
-      log('Scripts loaded but no OOCSI connection. Check the internet connection and reload.');
+      heistLog('Scripts loaded but no OOCSI connection. Check the internet connection and reload.');
     }
   }, 8000);
 
@@ -292,7 +293,7 @@
     switch (d.module) {
       case 'suitcase':       // heartbeat from the ESP32
         markSuitcaseSeen();
-        if (d.event === 'online') log('Suitcase online (uptime ' + (d.uptime_s ?? '?') + ' s)');
+        if (d.event === 'online') heistLog('Suitcase online (uptime ' + (d.uptime_s ?? '?') + ' s)');
         break;
 
       case 'morse_button': { // red button pressed or released
@@ -305,25 +306,22 @@
       }
 
       case 'terminal':       // our own messages (and those of other open terminals)
-        log('Terminal: ' + d.event);
+        heistLog('Terminal: ' + d.event);
         break;
 
       default:               // messages from other modules on the channel
-        log(d.module + ': ' + JSON.stringify(d));
+        heistLog(d.module + ': ' + JSON.stringify(d));
     }
   }
 
+  // Every message restarts the countdown; it only runs out when the suitcase goes quiet
   function markSuitcaseSeen() {
-    lastSuitcaseSeen = Date.now();
     setState('st-suitcase', 'Live', 'state-live');
-  }
-
-  // Every 2 s: check whether the suitcase has gone quiet
-  setInterval(() => {
-    if (lastSuitcaseSeen && Date.now() - lastSuitcaseSeen > SUITCASE_TIMEOUT_MS) {
+    clearTimeout(suitcaseTimer);
+    suitcaseTimer = setTimeout(() => {
       setState('st-suitcase', 'Lost: check ESP power / Wi-Fi', 'error');
-    }
-  }, 2000);
+    }, SUITCASE_TIMEOUT_MS);
+  }
 
   // =====================================================
   // LAMPO
@@ -349,14 +347,14 @@
     screen.classList.add('shown', 'power-on');
     screen.removeAttribute('aria-hidden');
     setState('st-lampo', 'On screen: receiving', 'state-live');
-    log('Signal detected. Lampo on screen.');
+    heistLog('Signal detected. Lampo on screen.');
 
     // after the animation, hide the terminal completely
     setTimeout(() => {
       main.style.visibility = 'hidden';
       screen.classList.remove('power-on');
       swapping = false;
-    }, SWAP_MS + 100);
+    }, Math.max(animationMs(main), animationMs(screen)));
   }
 
   // CLEAR button: Lampo fades out, terminal switches back on
@@ -377,38 +375,49 @@
       lampoShown = false;
       swapping = false;
       setState('st-lampo', 'Ready: shows on next press', 'state-live');
-      log('Message cleared.');
+      heistLog('Message cleared.');
       document.getElementById('code').focus();
-    }, 380);
+    }, animationMs(screen));
   }
 
   // =====================================================
   // PASSCODE
   // =====================================================
+  // One "_" per character, and a number pad on phones when the code is all digits
+  const codeInput = document.getElementById('code');
+  codeInput.placeholder = '_'.repeat(CORRECT_PASSCODE.length);
+  if (/^\d+$/.test(CORRECT_PASSCODE)) codeInput.inputMode = 'numeric';
+
   function checkPasscode() {
+    if (solved) return;
     const input = document.getElementById('code');
     const feedback = document.getElementById('feedback');
     const attempt = input.value.trim().toUpperCase();
 
-    if (attempt === CORRECT_PASSCODE) {
+    if (attempt === CORRECT_PASSCODE.toUpperCase()) {
       solved = true;
-      log('Passcode accepted. Vault unlocked.');
+      heistLog('Passcode accepted. Vault unlocked.');
       document.getElementById('input-section').style.display = 'none';
       document.getElementById('success').style.display = 'flex';
       document.body.classList.add('flash');
 
-      // tell the rest of the escape room
+      // tell the rest of the escape room (if not connected yet, thing() does it later)
       if (connected) {
-        OOCSI.send(TEAM_CHANNEL, { module: 'terminal', event: 'solved', team: TEAM_NUMBER });
+        sendSolved();
         if (solvedData) solvedData(true);
       }
     } else {
-      log("Wrong passcode '" + attempt + "'");
+      heistLog("Wrong passcode '" + attempt + "'");
       feedback.textContent = attempt ? 'Wrong code. Decode the signal again.' : 'Type the code first.';
       feedback.className = 'error';
       input.value = '';
-      setTimeout(() => { feedback.textContent = ''; feedback.className = ''; }, 2000);
+      clearTimeout(feedbackTimer);   // each attempt shows its message for the full 2 s
+      feedbackTimer = setTimeout(() => { feedback.textContent = ''; feedback.className = ''; }, 2000);
     }
+  }
+
+  function sendSolved() {
+    OOCSI.send(TEAM_CHANNEL, { module: 'terminal', event: 'solved', team: TEAM_NUMBER });
   }
 
   // =====================================================
@@ -442,15 +451,21 @@
   // =====================================================
 
   // Messages for testing; open with F12 > Console
-  function log(text) {
+  // (not called log: p5.js replaces any global log() with Math.log)
+  function heistLog(text) {
     console.log('[Heist] ' + text);
   }
 
   // Update one of the three status boxes
   function setState(id, text, cls) {
     const el = document.getElementById(id);
-    el.textContent = text;
+    if (el.textContent !== text) el.textContent = text;
     el.className = cls;
+  }
+
+  // Length of the CSS animation running on el (ms), so the timings live only in the CSS
+  function animationMs(el) {
+    return parseFloat(getComputedStyle(el).animationDuration) * 1000 || 0;
   }
 </script>
 </body>
