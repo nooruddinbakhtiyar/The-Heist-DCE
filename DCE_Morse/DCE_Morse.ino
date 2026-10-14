@@ -3,21 +3,25 @@
 #include "pin_config.h"
 
 // ==========================================
-// Network settings  (fill in before flashing, never upload to Data Foundry)
+// Network settings: SECRET_SSID and SECRET_PASS live in arduino_secrets.h,
+// which git ignores so the Wi-Fi password never ends up online
 // ==========================================
-const char* ssid     = "iotroam";
-const char* password = "ESPsuitcaseTeam7";
+#if __has_include("arduino_secrets.h")
+#include "arduino_secrets.h"
+#else
+#error "Copy arduino_secrets.h.example to arduino_secrets.h and fill in the Wi-Fi name and password"
+#endif
 
 // ==========================================
 // OOCSI settings
 // ==========================================
-const char* oocsiServer = "oocsi.id.tue.nl";
+const char* const oocsiServer = "oocsi.id.tue.nl";
 
 // Unique name; the server replaces #### with random digits
-const char* oocsiNodeName = "team7_suitcase_####";
+const char* const oocsiNodeName = "team7_suitcase_####";
 
 // THE team channel. Must be identical in index.html (TEAM_CHANNEL).
-const char* teamChannel = "OOCSI-things/team7";
+const char* const teamChannel = "OOCSI-things/team7";
 
 OOCSI oocsi = OOCSI();
 
@@ -41,13 +45,13 @@ void sendHeartbeat() {
   oocsi.sendMessage();
 }
 
-void sendRed(const char* state, long durationMs) {
+void sendRed(bool pressed, unsigned long heldMs) {
   oocsi.newMessage(teamChannel);
   oocsi.addString("module", "morse_button");
-  oocsi.addString("state", state);
+  oocsi.addString("state", pressed ? "pressed" : "released");
   // Lampo (OOCSI Things): on while pressed, off when released
-  oocsi.addBool("lampo_toggle", strcmp(state, "pressed") == 0);
-  if (durationMs >= 0) oocsi.addInt("duration_ms", (int)durationMs); // only on release
+  oocsi.addBool("lampo_toggle", pressed);
+  if (!pressed) oocsi.addInt("duration_ms", (int)heldMs);
   oocsi.sendMessage();
 }
 
@@ -57,10 +61,9 @@ void setup() {
 
   // oocsi.connect also connects to Wi-Fi
   Serial.println("Connecting to Wi-Fi and OOCSI...");
-  oocsi.connect(oocsiNodeName, oocsiServer, ssid, password);
+  oocsi.connect(oocsiNodeName, oocsiServer, SECRET_SSID, SECRET_PASS);
 
-  Serial.print("Connected. Talking on channel: ");
-  Serial.println(teamChannel);
+  Serial.printf("Talking on channel: %s\n", teamChannel);
   sendHeartbeat();
   lastHeartbeat = millis();
 }
@@ -68,33 +71,35 @@ void setup() {
 void loop() {
   // keeps the OOCSI connection alive
   oocsi.check();
+  const unsigned long now = millis();
 
   // --- Red button: debounce, then send pressed / released ---
-  int reading = digitalRead(RED_BUTTON_PIN);
+  const int reading = digitalRead(RED_BUTTON_PIN);
   if (reading != lastReading) {
-    lastChange = millis();
+    lastReading = reading;
+    lastChange = now;
   }
-  lastReading = reading;
 
-  if ((millis() - lastChange) > DEBOUNCE_DELAY_MS && reading != stableState) {
+  if (now - lastChange > DEBOUNCE_DELAY_MS && reading != stableState) {
     stableState = reading;
 
     if (stableState == BUTTON_ACTIVE_STATE) {
-      pressedAt = millis();
+      pressedAt = now;
       Serial.println("Red pressed  -> lamp ON");
-      sendRed("pressed", -1);
+      sendRed(true, 0);
     } else {
-      long held = millis() - pressedAt;
-      Serial.print("Red released -> lamp OFF (held ");
-      Serial.print(held);
-      Serial.println(" ms)");
-      sendRed("released", held);
+      const unsigned long held = now - pressedAt;
+      Serial.printf("Red released -> lamp OFF (held %lu ms)\n", held);
+      sendRed(false, held);
     }
   }
 
   // --- Heartbeat so the web page can show the suitcase is online ---
-  if (millis() - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
-    lastHeartbeat = millis();
+  if (now - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
+    lastHeartbeat = now;
     sendHeartbeat();
   }
+
+  // let the CPU idle between polls; 1 ms is far below the debounce time
+  delay(1);
 }
